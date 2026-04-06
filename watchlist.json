@@ -1,0 +1,117 @@
+{
+  "games": [
+    {
+      "sport": "MLB",
+      "away_team": "Los Angeles Dodgers",
+      "home_team": "Toronto Blue Jays",
+      "opening_total": 8.5,
+      "under_1": 11.0,
+      "under_2": 12.0,
+      "over_1": 6.5,
+      "over_2": 5.5,
+      "buy_low_team": "Los Angeles Dodgers",
+      "buy_low_min": 120,
+      "buy_low_max": 180
+    },
+    {
+      "sport": "MLB",
+      "away_team": "Milwaukee Brewers",
+      "home_team": "Boston Red Sox",
+      "opening_total": 8.0,
+      "under_1": 10.5,
+      "under_2": 11.5,
+      "over_1": 6.0,
+      "over_2": 5.0,
+      "buy_low_team": "Milwaukee Brewers",
+      "buy_low_min": 120,
+      "buy_low_max": 180
+    },
+    {
+      "sport": "MLB",
+      "away_team": "Houston Astros",
+      "home_team": "Colorado Rockies",
+      "opening_total": 10.5,
+      "under_1": 13.0,
+      "under_2": 14.0,
+      "over_1": 8.5,
+      "over_2": 7.5,
+      "buy_low_team": "Houston Astros",
+      "buy_low_min": 120,
+      "buy_low_max": 220
+    },
+    {
+      "sport": "NBA",
+      "away_team": "Portland Trail Blazers",
+      "home_team": "Denver Nuggets",
+      "opening_total": 239.5,
+      "under_1": 249.5,
+      "under_2": 254.5,
+      "over_1": 229.5,
+      "over_2": 224.5,
+      "buy_low_team": "Denver Nuggets",
+      "buy_low_spread_min": 8,
+      "buy_low_spread_max": 12
+    },
+    {
+      "sport": "NBA",
+      "away_team": "Philadelphia 76ers",
+      "home_team": "San Antonio Spurs",
+      "opening_total": 234.5,
+      "under_1": 244.5,
+      "under_2": 249.5,
+      "over_1": 224.5,
+      "over_2": 219.5,
+      "buy_low_team": "San Antonio Spurs",
+      "buy_low_spread_min": 8,
+      "buy_low_spread_max": 12
+    },
+    {
+      "sport": "NBA",
+      "away_team": "New York Knicks",
+      "home_team": "Atlanta Hawks",
+      "opening_total": 229.0,
+      "under_1": 239.0,
+      "under_2": 244.0,
+      "over_1": 219.0,
+      "over_2": 214.0,
+      "buy_low_team": ""
+    },
+    {
+      "sport": "NHL",
+      "away_team": "Tampa Bay Lightning",
+      "home_team": "Buffalo Sabres",
+      "opening_total": 6.5,
+      "under_1": 7.5,
+      "under_2": 8.0,
+      "over_1": 5.5,
+      "over_2": 5.0,
+      "buy_low_team": "Tampa Bay Lightning",
+      "buy_low_min": 110,
+      "buy_low_max": 160
+    },
+    {
+      "sport": "NHL",
+      "away_team": "Nashville Predators",
+      "home_team": "Los Angeles Kings",
+      "opening_total": 5.5,
+      "under_1": 6.5,
+      "under_2": 7.0,
+      "over_1": 4.5,
+      "over_2": 4.0,
+      "buy_low_team": "Los Angeles Kings",
+      "buy_low_min": 110,
+      "buy_low_max": 160
+    },
+    {
+      "sport": "NHL",
+      "away_team": "Chicago Blackhawks",
+      "home_team": "San Jose Sharks",
+      "opening_total": 6.0,
+      "under_1": 7.0,
+      "under_2": 7.5,
+      "over_1": 5.0,
+      "over_2": 4.5,
+      "buy_low_team": ""
+    }
+  ]
+}
