@@ -1,1 +1,1 @@
-worker: python3 shift_alerts.py
+worker: python app.py
