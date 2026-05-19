@@ -803,3 +803,6 @@ def monitor():
 
 if __name__ == "__main__":
     monitor()
+
+# Railway entry point
+main = monitor
