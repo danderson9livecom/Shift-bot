@@ -1,808 +1,398 @@
 import os
 import time
-import json
-import statistics
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
 import requests
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from twilio.rest import Client
-from dotenv import load_dotenv
 
-
-load_dotenv()
+# =========================
+# ENVIRONMENT VARIABLES
+# =========================
 
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
+
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER")
 ALERT_TO_NUMBER = os.getenv("ALERT_TO_NUMBER")
 
-RUN_BOT = os.getenv("RUN_BOT", "true").lower()
+SPORT = "baseball_mlb"
+REGION = "us"
+MARKETS = "totals,h2h,spreads"
+ODDS_FORMAT = "american"
 
-if RUN_BOT != "true":
-    print("Bot disabled by RUN_BOT setting.")
-    exit()
+LOCAL_TZ = ZoneInfo("America/Phoenix")
 
-if not ODDS_API_KEY:
-    raise RuntimeError("Missing ODDS_API_KEY")
+CHECK_INTERVAL_SECONDS = 30
+START_BUFFER_MINUTES = 10
 
-client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-
-
-TZ = ZoneInfo("America/Phoenix")
-
-ACTIVE_CHECK_SECONDS = 30
-DORMANT_CHECK_SECONDS = 900
-PREGAME_ALERT_CHECK_SECONDS = 300
-
-START_ALERT_MINUTES_BEFORE = 15
-NOT_FOUND_LIMIT = 3
-
-STATE_FILE = "watch_state.json"
-RESULTS_FILE = "strike_results.jsonl"
+# A game will NOT be marked done just because odds are missing.
+# It must either be confirmed completed, or missing repeatedly after a long time.
+MAX_MISSING_LIVE_CHECKS = 20
+SAFE_FINAL_HOURS_AFTER_START = 5
 
 
-WATCHLIST = [
+# =========================
+# WATCH LIST
+# =========================
+
+WATCH_LIST = [
     {
-        "id": "braves_marlins",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
         "game": "Braves @ Marlins",
-        "away": "Braves",
-        "home": "Marlins",
+        "away": "Atlanta Braves",
+        "home": "Miami Marlins",
         "start_time": "2026-05-19 13:10",
-        "total_triggers": {
-            "over": 6.5,
-            "under": 11.5,
-        },
-        "spread_triggers": [],
+        "over_trigger": 6.5,
+        "under_trigger": 11.5,
     },
     {
-        "id": "orioles_rays",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
-        "game": "Orioles @ Rays",
-        "away": "Orioles",
-        "home": "Rays",
-        "start_time": "2026-05-19 15:40",
-        "total_triggers": {
-            "over": 5.5,
-            "under": 10.0,
-        },
-        "spread_triggers": [],
-    },
-    {
-        "id": "reds_phillies",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
         "game": "Reds @ Phillies",
-        "away": "Reds",
-        "home": "Phillies",
+        "away": "Cincinnati Reds",
+        "home": "Philadelphia Phillies",
         "start_time": "2026-05-19 15:40",
-        "total_triggers": {
-            "over": 6.5,
-            "under": 11.5,
-        },
-        "spread_triggers": [],
+        "over_trigger": 6.5,
+        "under_trigger": 11.5,
     },
     {
-        "id": "guardians_tigers",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
         "game": "Guardians @ Tigers",
-        "away": "Guardians",
-        "home": "Tigers",
+        "away": "Cleveland Guardians",
+        "home": "Detroit Tigers",
         "start_time": "2026-05-19 15:40",
-        "total_triggers": {
-            "over": 6.0,
-            "under": 10.5,
-        },
-        "spread_triggers": [],
+        "over_trigger": 6.5,
+        "under_trigger": 11.5,
     },
     {
-        "id": "mets_nationals",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
         "game": "Mets @ Nationals",
-        "away": "Mets",
-        "home": "Nationals",
+        "away": "New York Mets",
+        "home": "Washington Nationals",
         "start_time": "2026-05-19 15:45",
-        "total_triggers": {
-            "over": 7.0,
-            "under": 12.0,
-        },
-        "spread_triggers": [],
+        "over_trigger": 6.5,
+        "under_trigger": 11.5,
     },
     {
-        "id": "bluejays_yankees",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
         "game": "Blue Jays @ Yankees",
-        "away": "Blue Jays",
-        "home": "Yankees",
+        "away": "Toronto Blue Jays",
+        "home": "New York Yankees",
         "start_time": "2026-05-19 16:05",
-        "total_triggers": {
-            "over": 6.0,
-            "under": 11.5,
-        },
-        "spread_triggers": [],
+        "over_trigger": 6.5,
+        "under_trigger": 11.5,
     },
     {
-        "id": "redsox_royals",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
         "game": "Red Sox @ Royals",
-        "away": "Red Sox",
-        "home": "Royals",
+        "away": "Boston Red Sox",
+        "home": "Kansas City Royals",
         "start_time": "2026-05-19 16:40",
-        "total_triggers": {
-            "over": 5.0,
-            "under": 9.5,
-        },
-        "spread_triggers": [],
+        "over_trigger": 6.5,
+        "under_trigger": 11.5,
     },
     {
-        "id": "astros_twins",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
         "game": "Astros @ Twins",
-        "away": "Astros",
-        "home": "Twins",
+        "away": "Houston Astros",
+        "home": "Minnesota Twins",
         "start_time": "2026-05-19 16:40",
-        "total_triggers": {
-            "over": 6.5,
-            "under": 12.0,
-        },
-        "spread_triggers": [],
+        "over_trigger": 6.5,
+        "under_trigger": 11.5,
     },
     {
-        "id": "brewers_cubs",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
         "game": "Brewers @ Cubs",
-        "away": "Brewers",
-        "home": "Cubs",
+        "away": "Milwaukee Brewers",
+        "home": "Chicago Cubs",
         "start_time": "2026-05-19 16:40",
-        "total_triggers": {
-            "over": 5.5,
-            "under": 10.0,
-        },
-        "spread_triggers": [],
+        "over_trigger": 6.5,
+        "under_trigger": 11.5,
     },
     {
-        "id": "pirates_cardinals",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
         "game": "Pirates @ Cardinals",
-        "away": "Pirates",
-        "home": "Cardinals",
+        "away": "Pittsburgh Pirates",
+        "home": "St. Louis Cardinals",
         "start_time": "2026-05-19 16:45",
-        "total_triggers": {
-            "over": 5.5,
-            "under": 10.5,
-        },
-        "spread_triggers": [],
+        "over_trigger": 6.5,
+        "under_trigger": 11.5,
     },
     {
-        "id": "rangers_rockies",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
         "game": "Rangers @ Rockies",
-        "away": "Rangers",
-        "home": "Rockies",
+        "away": "Texas Rangers",
+        "home": "Colorado Rockies",
         "start_time": "2026-05-19 17:40",
-        "total_triggers": {
-            "over": 7.5,
-            "under": 14.0,
-        },
-        "spread_triggers": [],
+        "over_trigger": 6.5,
+        "under_trigger": 11.5,
     },
     {
-        "id": "athletics_angels",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
         "game": "Athletics @ Angels",
         "away": "Athletics",
-        "home": "Angels",
+        "home": "Los Angeles Angels",
         "start_time": "2026-05-19 18:38",
-        "total_triggers": {
-            "over": 6.5,
-            "under": 12.5,
-        },
-        "spread_triggers": [],
+        "over_trigger": 6.5,
+        "under_trigger": 11.5,
     },
     {
-        "id": "whitesox_mariners",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
         "game": "White Sox @ Mariners",
-        "away": "White Sox",
-        "home": "Mariners",
+        "away": "Chicago White Sox",
+        "home": "Seattle Mariners",
         "start_time": "2026-05-19 18:40",
-        "total_triggers": {
-            "over": 5.0,
-            "under": 9.5,
-        },
-        "spread_triggers": [],
+        "over_trigger": 6.5,
+        "under_trigger": 11.5,
     },
     {
-        "id": "dodgers_padres",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
         "game": "Dodgers @ Padres",
-        "away": "Dodgers",
-        "home": "Padres",
+        "away": "Los Angeles Dodgers",
+        "home": "San Diego Padres",
         "start_time": "2026-05-19 18:40",
-        "total_triggers": {
-            "over": 6.0,
-            "under": 12.5,
-        },
-        "spread_triggers": [],
+        "over_trigger": 6.5,
+        "under_trigger": 11.5,
     },
     {
-        "id": "giants_diamondbacks",
-        "sport_key": "baseball_mlb",
-        "league": "MLB",
-        "game": "Giants @ Diamondbacks",
-        "away": "Giants",
-        "home": "Diamondbacks",
-        "start_time": "2026-05-19 18:40",
-        "total_triggers": {
-            "over": 6.5,
-            "under": 11.5,
-        },
-        "spread_triggers": [],
-    },
-
-    {
-        "id": "cavaliers_knicks",
-        "sport_key": "basketball_nba",
-        "league": "NBA",
-        "game": "Cavaliers @ Knicks",
-        "away": "Cavaliers",
-        "home": "Knicks",
-        "start_time": "2026-05-19 17:00",
-        "total_triggers": {
-            "over": 209.5,
-            "under": 224.5,
-        },
-        "spread_triggers": [
-            {
-                "team": "Knicks",
-                "condition": "at_or_above",
-                "point": 4.5,
-                "message": "BUY Knicks live spread",
-            }
-        ],
-    },
-    {
-        "id": "tempo_mercury",
-        "sport_key": "basketball_wnba",
-        "league": "WNBA",
-        "game": "Tempo @ Mercury",
-        "away": "Tempo",
-        "home": "Mercury",
-        "start_time": "2026-05-19 19:00",
-        "total_triggers": {
-            "over": 164.5,
-            "under": 181.5,
-        },
-        "spread_triggers": [
-            {
-                "team": "Mercury",
-                "condition": "at_or_above",
-                "point": -2.5,
-                "message": "BUY Phoenix live spread",
-            }
-        ],
+        "game": "Orioles @ Rays",
+        "away": "Baltimore Orioles",
+        "home": "Tampa Bay Rays",
+        "start_time": "2026-05-19 15:40",
+        "over_trigger": 6.5,
+        "under_trigger": 11.5,
     },
 ]
 
 
-def now_phoenix():
-    return datetime.now(TZ)
+# =========================
+# STATE
+# =========================
+
+state = {}
+
+for item in WATCH_LIST:
+    state[item["game"]] = {
+        "active": False,
+        "done": False,
+        "over_alert_sent": False,
+        "under_alert_sent": False,
+        "missing_live_checks": 0,
+    }
+
+
+# =========================
+# HELPERS
+# =========================
+
+def now_local():
+    return datetime.now(LOCAL_TZ)
 
 
 def parse_start_time(value):
-    return datetime.strptime(value, "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
+    return datetime.strptime(value, "%Y-%m-%d %H:%M").replace(tzinfo=LOCAL_TZ)
 
 
-def normalize(value):
-    return (
-        value.lower()
-        .replace(".", "")
-        .replace("-", " ")
-        .replace("blue jays", "blue jays")
-        .replace("d backs", "diamondbacks")
-        .replace("dbacks", "diamondbacks")
-        .replace("phoenix", "")
-        .replace("new york", "")
-        .replace("cleveland", "")
-        .replace("toronto", "")
-        .strip()
-    )
+def send_text(message):
+    print(message)
 
+    if not all([
+        TWILIO_ACCOUNT_SID,
+        TWILIO_AUTH_TOKEN,
+        TWILIO_FROM_NUMBER,
+        ALERT_TO_NUMBER
+    ]):
+        print("SMS skipped: missing Twilio environment variables.")
+        return
 
-def team_match(expected, actual):
-    expected_norm = normalize(expected)
-    actual_norm = normalize(actual)
+    client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-    return expected_norm in actual_norm or actual_norm in expected_norm
-
-
-def send_sms(message):
     client.messages.create(
         body=message,
         from_=TWILIO_FROM_NUMBER,
-        to=ALERT_TO_NUMBER,
+        to=ALERT_TO_NUMBER
     )
-    print(f"TEXT SENT: {message}")
 
 
-def load_state():
-    if not os.path.exists(STATE_FILE):
-        return {}
+def get_odds():
+    url = f"https://api.the-odds-api.com/v4/sports/{SPORT}/odds"
 
-    with open(STATE_FILE, "r") as f:
-        return json.load(f)
-
-
-def save_state(state):
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=2)
-
-
-def log_result(record):
-    with open(RESULTS_FILE, "a") as f:
-        f.write(json.dumps(record) + "\n")
-
-
-def initialize_state():
-    state = load_state()
-
-    for game in WATCHLIST:
-        if game["id"] not in state:
-            state[game["id"]] = {
-                "status": "DORMANT",
-                "alert_sent": False,
-                "start_alert_sent": False,
-                "not_found_count": 0,
-                "trigger": None,
-                "trigger_time": None,
-                "trigger_value": None,
-                "stop_reason": None,
-            }
-
-        if "start_alert_sent" not in state[game["id"]]:
-            state[game["id"]]["start_alert_sent"] = False
-
-    save_state(state)
-    return state
-
-
-def maybe_send_start_alert(game, game_state):
-    current_time = now_phoenix()
-    start_time = parse_start_time(game["start_time"])
-
-    minutes_until_start = (start_time - current_time).total_seconds() / 60
-
-    if 0 <= minutes_until_start <= START_ALERT_MINUTES_BEFORE:
-        if not game_state.get("start_alert_sent", False):
-            start_text = start_time.strftime("%I:%M %p").lstrip("0")
-
-            message = (
-                f"SHIFT BOT START ALERT\n"
-                f"{game['game']} starts at {start_text} Arizona time.\n"
-                f"Monitoring activates at game start.\n"
-            )
-
-            if game.get("total_triggers"):
-                message += (
-                    f"OVER total strike: {game['total_triggers']['over']} or lower\n"
-                    f"UNDER total strike: {game['total_triggers']['under']} or higher\n"
-                )
-
-            for spread in game.get("spread_triggers", []):
-                message += f"SPREAD strike: {spread['message']} at {spread['point']} or better\n"
-
-            send_sms(message)
-            game_state["start_alert_sent"] = True
-            print(f"START ALERT SENT: {game['game']}")
-
-
-def fetch_odds(sport_key):
-    url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds"
     params = {
         "apiKey": ODDS_API_KEY,
-        "regions": "us",
-        "markets": "totals,spreads",
-        "oddsFormat": "american",
+        "regions": REGION,
+        "markets": MARKETS,
+        "oddsFormat": ODDS_FORMAT,
     }
 
     response = requests.get(url, params=params, timeout=15)
 
     if response.status_code != 200:
-        raise RuntimeError(f"Odds API error for {sport_key}: {response.status_code} {response.text}")
+        print(f"ODDS API ERROR: {response.status_code} | {response.text}")
+        return []
 
     return response.json()
 
 
-def fetch_scores(sport_key):
-    url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/scores"
-    params = {
-        "apiKey": ODDS_API_KEY,
-        "daysFrom": 1,
-    }
+def teams_match(api_game, watched_game):
+    api_home = api_game.get("home_team", "").lower()
+    api_away = api_game.get("away_team", "").lower()
 
-    response = requests.get(url, params=params, timeout=15)
+    watched_home = watched_game["home"].lower()
+    watched_away = watched_game["away"].lower()
 
-    if response.status_code != 200:
-        raise RuntimeError(f"Scores API error for {sport_key}: {response.status_code} {response.text}")
-
-    return response.json()
-
-
-def find_event(game, odds_events):
-    for event in odds_events:
-        home = event.get("home_team", "")
-        away = event.get("away_team", "")
-
-        if team_match(game["home"], home) and team_match(game["away"], away):
-            return event
-
-    return None
+    return (
+        watched_home in api_home or api_home in watched_home
+    ) and (
+        watched_away in api_away or api_away in watched_away
+    )
 
 
-def find_score_event(game, score_events):
-    for event in score_events:
-        home = event.get("home_team", "")
-        away = event.get("away_team", "")
+def is_confirmed_completed(api_game):
+    completed = api_game.get("completed")
 
-        if team_match(game["home"], home) and team_match(game["away"], away):
-            return event
+    if completed is True:
+        return True
 
-    return None
+    status = str(api_game.get("status", "")).lower()
 
+    if status in ["final", "completed", "complete", "closed"]:
+        return True
 
-def is_game_final(game, score_events):
-    event = find_score_event(game, score_events)
-
-    if not event:
-        return False
-
-    return bool(event.get("completed", False))
+    return False
 
 
-def extract_live_total(event):
-    totals = []
+def extract_live_total(api_game):
+    best_total = None
 
-    for bookmaker in event.get("bookmakers", []):
-        for market in bookmaker.get("markets", []):
+    bookmakers = api_game.get("bookmakers", [])
+
+    for book in bookmakers:
+        markets = book.get("markets", [])
+
+        for market in markets:
             if market.get("key") != "totals":
                 continue
 
-            for outcome in market.get("outcomes", []):
-                if outcome.get("name", "").lower() in ["over", "under"]:
-                    point = outcome.get("point")
-                    if point is not None:
-                        totals.append(float(point))
+            outcomes = market.get("outcomes", [])
 
-    if not totals:
-        return None
-
-    return statistics.median(totals)
-
-
-def extract_team_spread(event, team_name):
-    spreads = []
-
-    for bookmaker in event.get("bookmakers", []):
-        for market in bookmaker.get("markets", []):
-            if market.get("key") != "spreads":
-                continue
-
-            for outcome in market.get("outcomes", []):
-                outcome_name = outcome.get("name", "")
+            for outcome in outcomes:
                 point = outcome.get("point")
 
-                if point is None:
-                    continue
+                if point is not None:
+                    best_total = float(point)
+                    return best_total
 
-                if team_match(team_name, outcome_name):
-                    spreads.append(float(point))
-
-    if not spreads:
-        return None
-
-    return statistics.median(spreads)
+    return None
 
 
-def get_active_games(state):
-    current_time = now_phoenix()
-    active_games = []
+def find_game(api_games, watched_game):
+    for api_game in api_games:
+        if teams_match(api_game, watched_game):
+            return api_game
 
-    for game in WATCHLIST:
-        game_state = state[game["id"]]
-
-        if game_state["status"] == "DONE":
-            continue
-
-        start_time = parse_start_time(game["start_time"])
-
-        maybe_send_start_alert(game, game_state)
-
-        if current_time >= start_time:
-            active_games.append(game)
-        else:
-            game_state["status"] = "DORMANT"
-
-    return active_games
+    return None
 
 
-def next_sleep_seconds(state):
-    current_time = now_phoenix()
-    next_start = None
-
-    for game in WATCHLIST:
-        game_state = state[game["id"]]
-
-        if game_state["status"] == "DONE":
-            continue
-
-        start_time = parse_start_time(game["start_time"])
-
-        if start_time > current_time:
-            if next_start is None or start_time < next_start:
-                next_start = start_time
-
-    if next_start is None:
-        return DORMANT_CHECK_SECONDS
-
-    seconds_until_start = int((next_start - current_time).total_seconds())
-
-    if seconds_until_start <= START_ALERT_MINUTES_BEFORE * 60:
-        return min(PREGAME_ALERT_CHECK_SECONDS, max(30, seconds_until_start))
-
-    return min(DORMANT_CHECK_SECONDS, max(300, seconds_until_start - START_ALERT_MINUTES_BEFORE * 60))
-
-
-def print_dormant_status(state):
-    current_time = now_phoenix()
-
-    for game in WATCHLIST:
-        game_state = state[game["id"]]
-
-        if game_state["status"] == "DONE":
-            print(f"DONE: {game['game']} | Reason: {game_state.get('stop_reason')}")
-            continue
-
-        start_time = parse_start_time(game["start_time"])
-
-        if current_time < start_time:
-            start_text = start_time.strftime("%I:%M %p").lstrip("0")
-            print(f"DORMANT: {game['game']} starts at {start_text}")
-        else:
-            print(f"WAITING ACTIVE CHECK: {game['game']}")
-
-
-def finish_game_with_strike(game, game_state, market, direction, value, strike_message):
-    current_time = now_phoenix()
-
-    message = (
-        f"STRIKE ALERT\n"
-        f"{game['game']}\n"
-        f"{strike_message}\n"
-        f"Current value: {value}"
-    )
-
-    send_sms(message)
-
-    game_state["alert_sent"] = True
-    game_state["status"] = "DONE"
-    game_state["trigger"] = f"{market}_{direction}"
-    game_state["trigger_time"] = current_time.isoformat()
-    game_state["trigger_value"] = value
-    game_state["stop_reason"] = "strike hit"
-
-    log_result({
-        "game": game["game"],
-        "date": current_time.strftime("%Y-%m-%d"),
-        "league": game["league"],
-        "market": market,
-        "direction": direction,
-        "value_at_alert": value,
-        "alert_time": current_time.isoformat(),
-        "status": "PENDING_RESULT",
-    })
-
-    print(f"TEXT SENT / DONE: {game['game']} | {market} | {direction} | {value}")
-
-
-def check_total_trigger(game, game_state, event):
-    total_triggers = game.get("total_triggers")
-
-    if not total_triggers:
-        return False
-
-    live_total = extract_live_total(event)
-
-    if live_total is None:
-        print(f"NO TOTAL FOUND: {game['game']}")
-        return False
-
-    print(
-        f"TOTAL CHECK: {game['game']} | "
-        f"Live total: {live_total} | "
-        f"Over <= {total_triggers['over']} | "
-        f"Under >= {total_triggers['under']}"
-    )
-
-    if live_total <= total_triggers["over"]:
-        finish_game_with_strike(
-            game,
-            game_state,
-            "live_total",
-            "OVER",
-            live_total,
-            f"HIT OVER live total at {total_triggers['over']} or lower",
-        )
-        return True
-
-    if live_total >= total_triggers["under"]:
-        finish_game_with_strike(
-            game,
-            game_state,
-            "live_total",
-            "UNDER",
-            live_total,
-            f"HIT UNDER live total at {total_triggers['under']} or higher",
-        )
-        return True
-
-    return False
-
-
-def check_spread_trigger(game, game_state, event):
-    for spread in game.get("spread_triggers", []):
-        team = spread["team"]
-        live_spread = extract_team_spread(event, team)
-
-        if live_spread is None:
-            print(f"NO SPREAD FOUND: {game['game']} | {team}")
-            continue
-
-        print(
-            f"SPREAD CHECK: {game['game']} | "
-            f"{team} live spread: {live_spread} | "
-            f"Strike: {spread['point']} or better"
-        )
-
-        if spread["condition"] == "at_or_above":
-            if live_spread >= spread["point"]:
-                finish_game_with_strike(
-                    game,
-                    game_state,
-                    "live_spread",
-                    team,
-                    live_spread,
-                    spread["message"],
-                )
-                return True
-
-        if spread["condition"] == "at_or_below":
-            if live_spread <= spread["point"]:
-                finish_game_with_strike(
-                    game,
-                    game_state,
-                    "live_spread",
-                    team,
-                    live_spread,
-                    spread["message"],
-                )
-                return True
-
-    return False
-
+# =========================
+# MAIN LOOP
+# =========================
 
 def monitor():
-    state = initialize_state()
-
-    print("SHIFT bot started.")
-    print(f"Phoenix time: {now_phoenix().strftime('%Y-%m-%d %H:%M:%S')}")
-    send_sms("SHIFT bot started. MLB, NBA, and WNBA monitoring active. Pregame alerts enabled.")
+    send_text("MLB live betting bot started. Dormant game protection is active.")
 
     while True:
-        active_games = get_active_games(state)
-        save_state(state)
+        current_time = now_local()
+        api_games = get_odds()
 
-        remaining_games = [
-            game for game in WATCHLIST
-            if state[game["id"]]["status"] != "DONE"
-        ]
+        active_count = 0
+        waiting_count = 0
 
-        if not remaining_games:
-            print("All games are DONE. Bot shutting down.")
-            break
+        for watched_game in WATCH_LIST:
+            game_name = watched_game["game"]
+            game_state = state[game_name]
 
-        if not active_games:
-            print_dormant_status(state)
-            sleep_seconds = next_sleep_seconds(state)
-            print(f"No active games. Sleeping {sleep_seconds} seconds to save credits.")
-            time.sleep(sleep_seconds)
-            continue
-
-        print(f"ACTIVE MODE: {len(active_games)} game(s) active.")
-
-        active_sport_keys = sorted(set(game["sport_key"] for game in active_games))
-
-        odds_by_sport = {}
-        scores_by_sport = {}
-
-        for sport_key in active_sport_keys:
-            try:
-                odds_by_sport[sport_key] = fetch_odds(sport_key)
-                scores_by_sport[sport_key] = fetch_scores(sport_key)
-            except Exception as e:
-                print(f"API error for {sport_key}: {e}")
-                odds_by_sport[sport_key] = []
-                scores_by_sport[sport_key] = []
-
-        for game in active_games:
-            game_state = state[game["id"]]
-
-            if game_state["status"] == "DONE":
+            if game_state["done"]:
                 continue
 
-            game_state["status"] = "ACTIVE"
+            start_time = parse_start_time(watched_game["start_time"])
+            activation_time = start_time - timedelta(minutes=START_BUFFER_MINUTES)
 
-            odds_events = odds_by_sport.get(game["sport_key"], [])
-            score_events = scores_by_sport.get(game["sport_key"], [])
-
-            if is_game_final(game, score_events):
-                game_state["status"] = "DONE"
-                game_state["stop_reason"] = "game final"
-                print(f"DONE: {game['game']} final.")
-                continue
-
-            event = find_event(game, odds_events)
-
-            if not event:
-                game_state["not_found_count"] += 1
+            if current_time < activation_time:
+                waiting_count += 1
                 print(
-                    f"NOT FOUND: {game['game']} "
-                    f"({game_state['not_found_count']}/{NOT_FOUND_LIMIT})"
+                    f"DORMANT: {game_name} starts at "
+                    f"{start_time.strftime('%I:%M %p').lstrip('0')}"
+                )
+                continue
+
+            if not game_state["active"]:
+                game_state["active"] = True
+                send_text(f"ACTIVE: {game_name} monitoring started.")
+
+            active_count += 1
+
+            api_game = find_game(api_games, watched_game)
+
+            if api_game is None:
+                game_state["missing_live_checks"] += 1
+
+                print(
+                    f"NO LIVE DATA YET: {game_name} | "
+                    f"missing check {game_state['missing_live_checks']}/"
+                    f"{MAX_MISSING_LIVE_CHECKS}"
                 )
 
-                if game_state["not_found_count"] >= NOT_FOUND_LIMIT:
-                    game_state["status"] = "DONE"
-                    game_state["stop_reason"] = "game not found repeatedly"
-                    print(f"DONE: {game['game']} stopped after repeated not found.")
+                hours_since_start = (current_time - start_time).total_seconds() / 3600
+
+                if (
+                    hours_since_start >= SAFE_FINAL_HOURS_AFTER_START
+                    and game_state["missing_live_checks"] >= MAX_MISSING_LIVE_CHECKS
+                ):
+                    game_state["done"] = True
+                    send_text(
+                        f"DONE: {game_name} removed after long post-start missing data. "
+                        f"This was NOT marked final immediately."
+                    )
 
                 continue
 
-            game_state["not_found_count"] = 0
+            game_state["missing_live_checks"] = 0
 
-            if check_total_trigger(game, game_state, event):
+            if is_confirmed_completed(api_game):
+                game_state["done"] = True
+                send_text(f"DONE: {game_name} confirmed final by API.")
                 continue
 
-            if check_spread_trigger(game, game_state, event):
+            live_total = extract_live_total(api_game)
+
+            if live_total is None:
+                print(f"ACTIVE: {game_name} | No total available right now.")
                 continue
 
-        save_state(state)
+            print(
+                f"ACTIVE: {game_name} | live total: {live_total} | "
+                f"over trigger: {watched_game['over_trigger']} | "
+                f"under trigger: {watched_game['under_trigger']}"
+            )
 
-        remaining = [
-            game["game"]
-            for game in WATCHLIST
-            if state[game["id"]]["status"] != "DONE"
-        ]
+            if (
+                live_total <= watched_game["over_trigger"]
+                and not game_state["over_alert_sent"]
+            ):
+                game_state["over_alert_sent"] = True
+                send_text(
+                    f"OVER TRIGGER: {game_name}\n"
+                    f"Live total is {live_total}.\n"
+                    f"Target was {watched_game['over_trigger']} or lower."
+                )
 
-        print(f"Still monitoring/waiting on {len(remaining)} game(s).")
-        time.sleep(ACTIVE_CHECK_SECONDS)
+            if (
+                live_total >= watched_game["under_trigger"]
+                and not game_state["under_alert_sent"]
+            ):
+                game_state["under_alert_sent"] = True
+                send_text(
+                    f"UNDER TRIGGER: {game_name}\n"
+                    f"Live total is {live_total}.\n"
+                    f"Target was {watched_game['under_trigger']} or higher."
+                )
+
+        print(f"ACTIVE MODE: {active_count} game(s) active.")
+        print(f"Still monitoring/waiting on {active_count + waiting_count} game(s).")
+
+        if all(state[item["game"]]["done"] for item in WATCH_LIST):
+            send_text("All watched MLB games are done. Bot shutting down.")
+            break
+
+        time.sleep(CHECK_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":
     monitor()
-
-# Railway entry point
-main = monitor
