@@ -1,4 +1,4 @@
-from shift_alerts import main
+from shift_alerts import monitor_games
 
 if __name__ == "__main__":
-    main()
+    monitor_games()
