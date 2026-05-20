@@ -6,400 +6,401 @@ from zoneinfo import ZoneInfo
 from twilio.rest import Client
 
 # =========================
-# ENVIRONMENT VARIABLES
+# ENV VARIABLES
 # =========================
-
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
-
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER")
 ALERT_TO_NUMBER = os.getenv("ALERT_TO_NUMBER")
 
-SPORT = "baseball_mlb"
-REGION = "us"
-MARKETS = "totals,h2h,spreads"
-ODDS_FORMAT = "american"
-
+# =========================
+# SETTINGS
+# =========================
 LOCAL_TZ = ZoneInfo("America/Phoenix")
 
-CHECK_INTERVAL_SECONDS = 30
-START_BUFFER_MINUTES = 10
+CHECK_INTERVAL_SECONDS = 60
+ACTIVATE_MINUTES_BEFORE_START = 5
+STOP_MONITORING_HOURS_AFTER_START = 4
 
-# A game will NOT be marked done just because odds are missing.
-# It must either be confirmed completed, or missing repeatedly after a long time.
-MAX_MISSING_LIVE_CHECKS = 20
-SAFE_FINAL_HOURS_AFTER_START = 5
+REGIONS = "us"
+MARKETS = "totals"
+ODDS_FORMAT = "american"
 
+twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 # =========================
-# WATCH LIST
+# LIVE STRIKE LIST
 # =========================
+GAMES = [
+    # =========================
+    # NBA STRIKE
+    # =========================
+    {
+        "sport": "basketball_nba",
+        "name": "Spurs @ Thunder",
+        "teams": ["San Antonio Spurs", "Oklahoma City Thunder"],
+        "start_time": "2026-05-20 17:30",
+        "play": "OVER",
+        "strike_total": 208.5,
+        "reason": "Best live strike from the Spurs/OKC analysis. Hit OVER if the live total falls to 208.5 or lower."
+    },
 
-WATCH_LIST = [
+    # =========================
+    # WNBA STRIKES
+    # =========================
     {
-        "game": "Braves @ Marlins",
-        "away": "Atlanta Braves",
-        "home": "Miami Marlins",
-        "start_time": "2026-05-19 13:10",
-        "over_trigger": 6.5,
-        "under_trigger": 11.5,
+        "sport": "basketball_wnba",
+        "name": "Dallas Wings @ Chicago Sky",
+        "teams": ["Dallas Wings", "Chicago Sky"],
+        "start_time": "2026-05-20 17:00",
+        "play": "UNDER",
+        "strike_total": 175.5,
+        "reason": "Top WNBA live strike. Hit UNDER if the live total reaches 175.5 or higher."
     },
     {
-        "game": "Reds @ Phillies",
-        "away": "Cincinnati Reds",
-        "home": "Philadelphia Phillies",
-        "start_time": "2026-05-19 15:40",
-        "over_trigger": 6.5,
-        "under_trigger": 11.5,
+        "sport": "basketball_wnba",
+        "name": "Connecticut Sun @ Seattle Storm",
+        "teams": ["Connecticut Sun", "Seattle Storm"],
+        "start_time": "2026-05-20 19:00",
+        "play": "UNDER",
+        "strike_total": 174.5,
+        "reason": "Second-best WNBA live strike. Hit UNDER if the live total reaches 174.5 or higher."
+    },
+
+    # =========================
+    # MLB STRIKES
+    # =========================
+    {
+        "sport": "baseball_mlb",
+        "name": "Dodgers @ Padres",
+        "teams": ["Los Angeles Dodgers", "San Diego Padres"],
+        "start_time": "2026-05-20 17:40",
+        "play": "UNDER",
+        "strike_total": 8.5,
+        "reason": "Petco + strong starter setup. Strike inflated live total."
     },
     {
-        "game": "Guardians @ Tigers",
-        "away": "Cleveland Guardians",
-        "home": "Detroit Tigers",
-        "start_time": "2026-05-19 15:40",
-        "over_trigger": 6.5,
-        "under_trigger": 11.5,
+        "sport": "baseball_mlb",
+        "name": "Brewers @ Cubs",
+        "teams": ["Milwaukee Brewers", "Chicago Cubs"],
+        "start_time": "2026-05-20 16:40",
+        "play": "UNDER",
+        "strike_total": 7.5,
+        "reason": "Wrigley suppression setup. Strike only if live total rises."
     },
     {
-        "game": "Mets @ Nationals",
-        "away": "New York Mets",
-        "home": "Washington Nationals",
-        "start_time": "2026-05-19 15:45",
-        "over_trigger": 6.5,
-        "under_trigger": 11.5,
+        "sport": "baseball_mlb",
+        "name": "Braves @ Marlins",
+        "teams": ["Atlanta Braves", "Miami Marlins"],
+        "start_time": "2026-05-20 15:40",
+        "play": "OVER",
+        "strike_total": 6.5,
+        "reason": "Atlanta run path. Strike if live total drops too low."
     },
     {
-        "game": "Blue Jays @ Yankees",
-        "away": "Toronto Blue Jays",
-        "home": "New York Yankees",
-        "start_time": "2026-05-19 16:05",
-        "over_trigger": 6.5,
-        "under_trigger": 11.5,
+        "sport": "baseball_mlb",
+        "name": "Astros @ Twins",
+        "teams": ["Houston Astros", "Minnesota Twins"],
+        "start_time": "2026-05-20 10:40",
+        "play": "UNDER",
+        "strike_total": 9.0,
+        "reason": "Controlled run environment. Strike inflated live total."
     },
     {
-        "game": "Red Sox @ Royals",
-        "away": "Boston Red Sox",
-        "home": "Kansas City Royals",
-        "start_time": "2026-05-19 16:40",
-        "over_trigger": 6.5,
-        "under_trigger": 11.5,
+        "sport": "baseball_mlb",
+        "name": "White Sox @ Mariners",
+        "teams": ["Chicago White Sox", "Seattle Mariners"],
+        "start_time": "2026-05-20 13:10",
+        "play": "UNDER",
+        "strike_total": 8.5,
+        "reason": "Seattle pitching edge + T-Mobile suppression."
     },
     {
-        "game": "Astros @ Twins",
-        "away": "Houston Astros",
-        "home": "Minnesota Twins",
-        "start_time": "2026-05-19 16:40",
-        "over_trigger": 6.5,
-        "under_trigger": 11.5,
+        "sport": "baseball_mlb",
+        "name": "Rangers @ Rockies",
+        "teams": ["Texas Rangers", "Colorado Rockies"],
+        "start_time": "2026-05-20 12:10",
+        "play": "OVER",
+        "strike_total": 9.0,
+        "reason": "Coors Field volatility. Strike if live total falls."
     },
     {
-        "game": "Brewers @ Cubs",
-        "away": "Milwaukee Brewers",
-        "home": "Chicago Cubs",
-        "start_time": "2026-05-19 16:40",
-        "over_trigger": 6.5,
-        "under_trigger": 11.5,
+        "sport": "baseball_mlb",
+        "name": "Red Sox @ Royals",
+        "teams": ["Boston Red Sox", "Kansas City Royals"],
+        "start_time": "2026-05-20 16:40",
+        "play": "UNDER",
+        "strike_total": 8.5,
+        "reason": "Royals pace control. Strike inflated live total."
     },
     {
-        "game": "Pirates @ Cardinals",
-        "away": "Pittsburgh Pirates",
-        "home": "St. Louis Cardinals",
-        "start_time": "2026-05-19 16:45",
-        "over_trigger": 6.5,
-        "under_trigger": 11.5,
+        "sport": "baseball_mlb",
+        "name": "Blue Jays @ Yankees",
+        "teams": ["Toronto Blue Jays", "New York Yankees"],
+        "start_time": "2026-05-20 16:05",
+        "play": "UNDER",
+        "strike_total": 8.5,
+        "reason": "Yankee Stadium can inflate live totals after one HR."
     },
     {
-        "game": "Rangers @ Rockies",
-        "away": "Texas Rangers",
-        "home": "Colorado Rockies",
-        "start_time": "2026-05-19 17:40",
-        "over_trigger": 6.5,
-        "under_trigger": 11.5,
+        "sport": "baseball_mlb",
+        "name": "Mets @ Nationals",
+        "teams": ["New York Mets", "Washington Nationals"],
+        "start_time": "2026-05-20 15:45",
+        "play": "OVER",
+        "strike_total": 8.5,
+        "reason": "Nationals bullpen volatility. Strike if total drops."
     },
     {
-        "game": "Athletics @ Angels",
-        "away": "Athletics",
-        "home": "Los Angeles Angels",
-        "start_time": "2026-05-19 18:38",
-        "over_trigger": 6.5,
-        "under_trigger": 11.5,
+        "sport": "baseball_mlb",
+        "name": "Giants @ Diamondbacks",
+        "teams": ["San Francisco Giants", "Arizona Diamondbacks"],
+        "start_time": "2026-05-20 12:40",
+        "play": "OVER",
+        "strike_total": 7.5,
+        "reason": "Arizona late-scoring environment. Strike low live total."
     },
     {
-        "game": "White Sox @ Mariners",
-        "away": "Chicago White Sox",
-        "home": "Seattle Mariners",
-        "start_time": "2026-05-19 18:40",
-        "over_trigger": 6.5,
-        "under_trigger": 11.5,
+        "sport": "baseball_mlb",
+        "name": "Reds @ Phillies",
+        "teams": ["Cincinnati Reds", "Philadelphia Phillies"],
+        "start_time": "2026-05-20 10:05",
+        "play": "OVER",
+        "strike_total": 8.5,
+        "reason": "Citizens Bank scoring variance. Strike low live total."
     },
     {
-        "game": "Dodgers @ Padres",
-        "away": "Los Angeles Dodgers",
-        "home": "San Diego Padres",
-        "start_time": "2026-05-19 18:40",
-        "over_trigger": 6.5,
-        "under_trigger": 11.5,
+        "sport": "baseball_mlb",
+        "name": "Pirates @ Cardinals",
+        "teams": ["Pittsburgh Pirates", "St. Louis Cardinals"],
+        "start_time": "2026-05-20 16:45",
+        "play": "OVER",
+        "strike_total": 6.5,
+        "reason": "Low total creates value if starter exits early."
     },
     {
-        "game": "Orioles @ Rays",
-        "away": "Baltimore Orioles",
-        "home": "Tampa Bay Rays",
-        "start_time": "2026-05-19 15:40",
-        "over_trigger": 6.5,
-        "under_trigger": 11.5,
+        "sport": "baseball_mlb",
+        "name": "Athletics @ Angels",
+        "teams": ["Athletics", "Los Angeles Angels"],
+        "start_time": "2026-05-20 18:38",
+        "play": "UNDER",
+        "strike_total": 10.5,
+        "reason": "Market can overprice Angels scoring volatility."
+    },
+    {
+        "sport": "baseball_mlb",
+        "name": "Guardians @ Tigers",
+        "teams": ["Cleveland Guardians", "Detroit Tigers"],
+        "start_time": "2026-05-20 15:40",
+        "play": "UNDER",
+        "strike_total": 8.5,
+        "reason": "Comerica suppresses power. Strike inflated live total."
     },
 ]
 
-
 # =========================
-# STATE
+# INITIALIZE GAME STATE
 # =========================
+for game in GAMES:
+    game["start_dt"] = datetime.strptime(
+        game["start_time"], "%Y-%m-%d %H:%M"
+    ).replace(tzinfo=LOCAL_TZ)
 
-state = {}
-
-for item in WATCH_LIST:
-    state[item["game"]] = {
-        "active": False,
-        "done": False,
-        "over_alert_sent": False,
-        "under_alert_sent": False,
-        "missing_live_checks": 0,
-    }
+    game["active"] = False
+    game["alert_sent"] = False
+    game["finished"] = False
 
 
 # =========================
-# HELPERS
+# TWILIO TEXT ALERT
 # =========================
-
-def now_local():
-    return datetime.now(LOCAL_TZ)
-
-
-def parse_start_time(value):
-    return datetime.strptime(value, "%Y-%m-%d %H:%M").replace(tzinfo=LOCAL_TZ)
-
-
 def send_text(message):
-    print(message)
-
-    if not all([
-        TWILIO_ACCOUNT_SID,
-        TWILIO_AUTH_TOKEN,
-        TWILIO_FROM_NUMBER,
-        ALERT_TO_NUMBER
-    ]):
-        print("SMS skipped: missing Twilio environment variables.")
-        return
-
-    client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-
-    client.messages.create(
+    twilio_client.messages.create(
         body=message,
         from_=TWILIO_FROM_NUMBER,
         to=ALERT_TO_NUMBER
     )
 
 
-def get_odds():
-    url = f"https://api.the-odds-api.com/v4/sports/{SPORT}/odds"
+# =========================
+# ODDS API
+# =========================
+def get_live_totals(sport):
+    url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds"
 
     params = {
         "apiKey": ODDS_API_KEY,
-        "regions": REGION,
+        "regions": REGIONS,
         "markets": MARKETS,
-        "oddsFormat": ODDS_FORMAT,
+        "oddsFormat": ODDS_FORMAT
     }
 
-    response = requests.get(url, params=params, timeout=15)
-
-    if response.status_code != 200:
-        print(f"ODDS API ERROR: {response.status_code} | {response.text}")
-        return []
-
+    response = requests.get(url, params=params, timeout=20)
+    response.raise_for_status()
     return response.json()
 
 
-def teams_match(api_game, watched_game):
-    api_home = api_game.get("home_team", "").lower()
-    api_away = api_game.get("away_team", "").lower()
+# =========================
+# MATCH GAME BY TEAMS
+# =========================
+def teams_match(event, game):
+    home = event.get("home_team", "").lower()
+    away = event.get("away_team", "").lower()
 
-    watched_home = watched_game["home"].lower()
-    watched_away = watched_game["away"].lower()
+    event_teams = [home, away]
 
-    return (
-        watched_home in api_home or api_home in watched_home
-    ) and (
-        watched_away in api_away or api_away in watched_away
-    )
+    for team in game["teams"]:
+        team_lower = team.lower()
+
+        if not any(
+            team_lower in event_team or event_team in team_lower
+            for event_team in event_teams
+        ):
+            return False
+
+    return True
 
 
-def is_confirmed_completed(api_game):
-    completed = api_game.get("completed")
+# =========================
+# GET BEST AVAILABLE LIVE TOTAL
+# =========================
+def extract_live_total(event):
+    totals = []
 
-    if completed is True:
-        return True
+    for bookmaker in event.get("bookmakers", []):
+        for market in bookmaker.get("markets", []):
+            if market.get("key") != "totals":
+                continue
 
-    status = str(api_game.get("status", "")).lower()
+            for outcome in market.get("outcomes", []):
+                point = outcome.get("point")
 
-    if status in ["final", "completed", "complete", "closed"]:
-        return True
+                if point is not None:
+                    totals.append(float(point))
+
+    if not totals:
+        return None
+
+    return sum(totals) / len(totals)
+
+
+# =========================
+# STRIKE LOGIC
+# =========================
+def should_strike(game, live_total):
+    if game["play"] == "OVER":
+        return live_total <= game["strike_total"]
+
+    if game["play"] == "UNDER":
+        return live_total >= game["strike_total"]
 
     return False
 
 
-def extract_live_total(api_game):
-    best_total = None
+# =========================
+# ACTIVATE / EXPIRE EACH GAME
+# =========================
+def activate_and_expire_games():
+    now = datetime.now(LOCAL_TZ)
 
-    bookmakers = api_game.get("bookmakers", [])
+    for game in GAMES:
+        activate_time = game["start_dt"] - timedelta(minutes=ACTIVATE_MINUTES_BEFORE_START)
+        expire_time = game["start_dt"] + timedelta(hours=STOP_MONITORING_HOURS_AFTER_START)
 
-    for book in bookmakers:
-        markets = book.get("markets", [])
+        if game["finished"]:
+            continue
 
-        for market in markets:
-            if market.get("key") != "totals":
-                continue
+        if now >= expire_time:
+            game["finished"] = True
+            game["active"] = False
+            print(f"STOPPED: {game['name']} expired.")
+            continue
 
-            outcomes = market.get("outcomes", [])
-
-            for outcome in outcomes:
-                point = outcome.get("point")
-
-                if point is not None:
-                    best_total = float(point)
-                    return best_total
-
-    return None
-
-
-def find_game(api_games, watched_game):
-    for api_game in api_games:
-        if teams_match(api_game, watched_game):
-            return api_game
-
-    return None
+        if now >= activate_time and not game["alert_sent"]:
+            game["active"] = True
 
 
 # =========================
-# MAIN LOOP
+# MAIN MONITOR LOOP
 # =========================
-
-def monitor():
-    send_text("MLB live betting bot started. Dormant game protection is active.")
+def monitor_games():
+    print("Live strike bot started.")
+    print("Monitoring NBA, WNBA, and MLB totals.")
+    print("Each game activates individually.")
+    print("Each game shuts off individually after alert or expiration.")
 
     while True:
-        current_time = now_local()
-        api_games = get_odds()
+        try:
+            activate_and_expire_games()
 
-        active_count = 0
-        waiting_count = 0
+            active_games = [
+                game for game in GAMES
+                if game["active"] and not game["alert_sent"] and not game["finished"]
+            ]
 
-        for watched_game in WATCH_LIST:
-            game_name = watched_game["game"]
-            game_state = state[game_name]
-
-            if game_state["done"]:
+            if not active_games:
+                print("No active games right now.")
+                time.sleep(CHECK_INTERVAL_SECONDS)
                 continue
 
-            start_time = parse_start_time(watched_game["start_time"])
-            activation_time = start_time - timedelta(minutes=START_BUFFER_MINUTES)
+            sports_needed = sorted(set(game["sport"] for game in active_games))
+            odds_by_sport = {}
 
-            if current_time < activation_time:
-                waiting_count += 1
+            for sport in sports_needed:
+                odds_by_sport[sport] = get_live_totals(sport)
+
+            for game in active_games:
+                odds_data = odds_by_sport.get(game["sport"], [])
+                matched_event = None
+
+                for event in odds_data:
+                    if teams_match(event, game):
+                        matched_event = event
+                        break
+
+                if not matched_event:
+                    print(f"{game['name']}: no matching live odds found yet.")
+                    continue
+
+                live_total = extract_live_total(matched_event)
+
+                if live_total is None:
+                    print(f"{game['name']}: no live total available.")
+                    continue
+
                 print(
-                    f"DORMANT: {game_name} starts at "
-                    f"{start_time.strftime('%I:%M %p').lstrip('0')}"
-                )
-                continue
-
-            if not game_state["active"]:
-                game_state["active"] = True
-                send_text(f"ACTIVE: {game_name} monitoring started.")
-
-            active_count += 1
-
-            api_game = find_game(api_games, watched_game)
-
-            if api_game is None:
-                game_state["missing_live_checks"] += 1
-
-                print(
-                    f"NO LIVE DATA YET: {game_name} | "
-                    f"missing check {game_state['missing_live_checks']}/"
-                    f"{MAX_MISSING_LIVE_CHECKS}"
+                    f"{game['name']} | {game['sport']} | "
+                    f"Play: {game['play']} | "
+                    f"Live Total: {live_total:.1f} | "
+                    f"Strike: {game['strike_total']}"
                 )
 
-                hours_since_start = (current_time - start_time).total_seconds() / 3600
-
-                if (
-                    hours_since_start >= SAFE_FINAL_HOURS_AFTER_START
-                    and game_state["missing_live_checks"] >= MAX_MISSING_LIVE_CHECKS
-                ):
-                    game_state["done"] = True
-                    send_text(
-                        f"DONE: {game_name} removed after long post-start missing data. "
-                        f"This was NOT marked final immediately."
+                if should_strike(game, live_total):
+                    message = (
+                        f"STRIKE ALERT\n\n"
+                        f"{game['name']}\n"
+                        f"SPORT: {game['sport']}\n"
+                        f"PLAY: {game['play']}\n"
+                        f"Live Total: {live_total:.1f}\n"
+                        f"Strike Number: {game['strike_total']}\n\n"
+                        f"Reason: {game['reason']}"
                     )
 
-                continue
+                    send_text(message)
 
-            game_state["missing_live_checks"] = 0
+                    game["alert_sent"] = True
+                    game["active"] = False
+                    game["finished"] = True
 
-            if is_confirmed_completed(api_game):
-                game_state["done"] = True
-                send_text(f"DONE: {game_name} confirmed final by API.")
-                continue
+                    print(f"ALERT SENT AND GAME STOPPED: {game['name']}")
 
-            live_total = extract_live_total(api_game)
+            time.sleep(CHECK_INTERVAL_SECONDS)
 
-            if live_total is None:
-                print(f"ACTIVE: {game_name} | No total available right now.")
-                continue
-
-            print(
-                f"ACTIVE: {game_name} | live total: {live_total} | "
-                f"over trigger: {watched_game['over_trigger']} | "
-                f"under trigger: {watched_game['under_trigger']}"
-            )
-
-            if (
-                live_total <= watched_game["over_trigger"]
-                and not game_state["over_alert_sent"]
-            ):
-                game_state["over_alert_sent"] = True
-                send_text(
-                    f"OVER TRIGGER: {game_name}\n"
-                    f"Live total is {live_total}.\n"
-                    f"Target was {watched_game['over_trigger']} or lower."
-                )
-
-            if (
-                live_total >= watched_game["under_trigger"]
-                and not game_state["under_alert_sent"]
-            ):
-                game_state["under_alert_sent"] = True
-                send_text(
-                    f"UNDER TRIGGER: {game_name}\n"
-                    f"Live total is {live_total}.\n"
-                    f"Target was {watched_game['under_trigger']} or higher."
-                )
-
-        print(f"ACTIVE MODE: {active_count} game(s) active.")
-        print(f"Still monitoring/waiting on {active_count + waiting_count} game(s).")
-
-        if all(state[item["game"]]["done"] for item in WATCH_LIST):
-            send_text("All watched MLB games are done. Bot shutting down.")
-            break
-
-        time.sleep(CHECK_INTERVAL_SECONDS)
+        except Exception as e:
+            print(f"ERROR: {e}")
+            time.sleep(CHECK_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":
-    monitor()
-
-
-def main():
-    monitor()
-
-if __name__ == "__main__":
-    main()
+    monitor_games()
